@@ -14,6 +14,8 @@
 #include <ctime>
 #include "app.hpp"
 
+typedef tuple<int, double, double, double, int, int, int> task_t;
+
 using std::ofstream;
 using std::ifstream;
 using std::string;
@@ -25,11 +27,18 @@ class SimAnnealing
     App<S, P> app;
     string signature;
     string raw_filename;
-    vector<tuple<int, double, double, int>> tasklist;
+    string initfile;
+    vector<task_t> tasklist;
+    vector<char> move_list;
 public:
-    SimAnnealing(int nsim1, int nsim2, int nsumo, int lsim1, int lsim2, int lsumo, size_t lx, size_t ly, string run_signature, vector<tuple<int, double, double, int>> thetasklist) : app(nsim1, nsim2, nsumo, lsim1, lsim2, lsumo, lx, ly), signature(run_signature), tasklist(thetasklist)
+    SimAnnealing(int nsim1, int nsim2, int nsumo, int lsim1, int lsim2, int lsumo, size_t lx, size_t ly, string run_signature, vector<tuple<int, double, double, double, int, int, int>> thetasklist, string initfile) : app(nsim1, nsim2, nsumo, lsim1, lsim2, lsumo, lx, ly), signature(run_signature), tasklist(thetasklist), move_list({'s', 'e', 'c', 'f', 't', 'r', 'T', 'R', 'X', 'Y'}), initfile(initfile)
     {
         raw_filename = "PolymerSim_";
+#ifdef MIDLINE
+        raw_filename += string("midline_");
+#elif NO_TWO_END
+        raw_filename += string("NoTwo_");
+#endif
         raw_filename += string("SimAnneal_");
         raw_filename += S::name + string("_");
         raw_filename += signature;
@@ -38,58 +47,75 @@ public:
         raw_filename += string("_nsumo_") + to_string(nsumo);
         raw_filename += string("_lsim1_") + to_string(lsim1);
         raw_filename += string("_lsim2_") + to_string(lsim2);
-        raw_filename += string("_lsumo") + to_string(lsumo);
+        raw_filename += string("_lsumo_") + to_string(lsumo);
         raw_filename += string("_lx") + to_string(lx);
         raw_filename += string("_ly") + to_string(ly);
     }
     
     void Run()
     {
-        app.Initialize();
+        if (initfile=="empty")
+        {
+            app.Initialize();
+        }
+        else
+        {
+            ifstream fin(initfile);
+            app.Resume(fin);
+            fin.close();
+        }
+        
         ofstream r_out(raw_filename + "_running.txt");
-        r_out<<"beta\t"<<"S_succ\t"<<"E_succ\t"<<"C_succ\t"<<"CS_succ\t"<<"CE_succ\t"<<"CC_succ\t"<<"energy"<<endl;
+        r_out<<"beta\t"<<"gamma\t";
+        for (auto move : move_list) r_out<<move<<"_succ\t";
+        r_out<<"energy"<<endl;
         for (auto task : tasklist)
         {
             int idx = std::get<0>(task);
             double beta = std::get<1>(task);
-            double gamma = std::get<2>(task);
-            int runs = std::get<3>(task);
-            
+            double gamma_intra = std::get<2>(task);
+            double gamma_inter = std::get<3>(task);
+            int runsim = std::get<4>(task);
+            int runsumo = std::get<5>(task);
+            int phos = std::get<6>(task);
+            if (phos == 1)
+            {
+                app.PhosphorylateOneSiteEpyc();
+            }
+            else if(phos == -1)
+            {
+                app.DephosphorylateAllEpyc();
+            }
+            else if(phos == 5) // a code for reducing a phos number of epyc length by 1
+            {
+                app.ReduceEpycLength();
+            }
             app.SetBeta(beta);
-            app.SetGamma(gamma);
+            app.SetGammaIntra(gamma_intra);
+            app.SetGammaInter(gamma_inter);
             
-            cout<<"Running task #"<<idx<<" with beta = "<<beta<<" and gamma = "<<gamma<<", "<<runs<<" runs"<<endl;
+            cout<<"Running task #"<<idx<<" with beta = "<<beta<<" and gamma_intra = "<<gamma_intra<< " and gamma_inter = "<<gamma_inter<<", "<<runsim<<" sim runs "<<runsumo<<" sumo runs"<<endl;
             
             // reset the success statistics
-            app.ResetMoveSucc('s');
-            app.ResetMoveSucc('e');
-            app.ResetMoveSucc('c');
-            app.ResetMoveSucc('S');
-            app.ResetMoveSucc('E');
-            app.ResetMoveSucc('C');
-            
-            for(int i = 1; i < runs+1; i++)
+            for (auto move : move_list) app.ResetMoveSucc(move);
+            if(runsim > runsumo)
             {
-                app.Proceed('s');
-                app.Proceed('e');
-                app.Proceed('c');
-                app.Proceed('S');
-                app.Proceed('E');
-                app.Proceed('C');
-                
-                if (i % (runs/10000) == 0)
-                {
-                    r_out<<beta<<"\t"<<gamma<<"\t";
-                    r_out<<app.ResetMoveSucc('s')<<"\t";
-                    r_out<<app.ResetMoveSucc('e')<<"\t";
-                    r_out<<app.ResetMoveSucc('c')<<"\t";
-                    r_out<<app.ResetMoveSucc('S')<<"\t";
-                    r_out<<app.ResetMoveSucc('E')<<"\t";
-                    r_out<<app.ResetMoveSucc('C')<<"\t";
-                    r_out<<app.GetEnergy()<<endl;
-                }
+                for(int i = 1; i <= runsumo; i++)
+                    for (auto move : move_list) app.Proceed(move);
+
+                for (int i = 1; i <= runsim - runsumo; i++)
+                    for (auto move : {'s', 'e', 'c', 'f'}) app.Proceed(move);
             }
-            string filename = string(raw_filename) + string("_status_step_") + to_string(idx) + string("_beta_") + to_string(beta) + string("_gamma_") + to_string(gamma) + string(".txt");
+            else
+            {
+                for(int i = 1; i <= runsim; i++)
+                    for (auto move : move_list) app.Proceed(move);
+
+                for (int i = 1; i <= runsumo - runsim; i++)
+                    for (auto move : {'t', 'r'}) app.Proceed(move);
+            }
+            
+            string filename = string(raw_filename) + string("_status_step_") + to_string(idx) + string("_beta_") + to_string(beta) + string("_gammaintra_") + to_string(gamma_intra) + string("_gammainter_") + to_string(gamma_inter) + string(".txt");
             ofstream out(filename);
             app.Dump(out);
             out.close();
@@ -104,77 +130,6 @@ public:
         app.TestReverseSpace();
         app.TestSpaceAndBond();
     }
-    
-/*    void Resume(int pct, string betas, string gammas, size_t rounds)
-    {
-        app.Initialize();
-        ofstream r_out(raw_filename + "_running"+to_string(pct)+".txt");
-        r_out<<"beta\t"<<"S_succ\t"<<"E_succ\t"<<"C_succ\t"<<"energy"<<endl;
-        string filename = string(raw_filename) + string("_status_") + to_string(pct) + string("_pct_beta_") + betas + string("_gamma_") + gammas+ string(".txt");
-        ifstream in(filename);
-        if(in.fail())
-        {
-            throw runtime_error(std::string("Failed to open file") + filename);
-        }
-        else
-        {
-            cout<<"File open successful: "<<filename<<endl;
-        }
-
-        app.Resume(in);
-        in.close();
-        
-        beta = stof(betas);
-        gamma = stof(gammas);
-        app.SetGamma(gamma);
-        app.SetBeta(beta);
-        
-        for (int i = pct; i < 100; i++)
-        {
-            for (int j = 1; j <= rounds/100; j++)
-            {
-                app.Proceed('s');
-                app.Proceed('e');
-                app.Proceed('c');
-                app.Proceed('S');
-                app.Proceed('E');
-                app.Proceed('C');
-                
-                if (j % (rounds/10000) == 1)
-                {
-                    r_out<<beta<<"\t";
-                    r_out<<app.ResetMoveSucc('s')<<"\t";
-                    r_out<<app.ResetMoveSucc('e')<<"\t";
-                    r_out<<app.ResetMoveSucc('c')<<"\t";
-                    r_out<<app.ResetMoveSucc('S')<<"\t";
-                    r_out<<app.ResetMoveSucc('E')<<"\t";
-                    r_out<<app.ResetMoveSucc('C')<<"\t";
-                    r_out<<app.GetEnergy()<<endl;
-                    app.ResetMoveSucc('s');
-                    app.ResetMoveSucc('e');
-                    app.ResetMoveSucc('c');
-                    app.ResetMoveSucc('S');
-                    app.ResetMoveSucc('E');
-                    app.ResetMoveSucc('C');
-                }
-            }
-            
-            beta *= multiply_factor;
-            gamma *= gamma_mult;
-            app.SetBeta(beta);
-            app.SetGamma(gamma);
-            
-            cout<<i+1<<" percent finished"<<endl;
-            string filename = string(raw_filename) + string("_status_") + to_string(i+1) + string("_pct_beta_") + to_string(beta) + string("_gamma_") + to_string(gamma) + string(".txt");
-            ofstream out(filename);
-            app.Dump(out);
-            out.close();
-        }
-        r_out.close();
-
-    }
- */
-    
     
 };
 

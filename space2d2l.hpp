@@ -39,7 +39,7 @@ class Space2D2L
 public:
     const static string name;
     int NSim1, LSim1, NSim2, LSim2, NSumo, LSumo;
-    int NSim, LSim; // NSim=NSim1+NSim2, LSim=max(LSim1+LSim2)
+    int NSim, LSim; // NSim=NSim1+NSim2, LSim=max(LSim1, LSim2)
     size_t Lx, Ly;
     int SimId, SumoId;
     vector<Polymer<Pos2d2l>> Sims;
@@ -64,6 +64,7 @@ public:
         ResumeReverse();
         cout<<"Finished resuming"<<endl;
     }
+    
     void ResumeBasicInfo(vector<vector<string>>& spaceanal, vector<vector<string>>& polyanal);
     void ResumeSpace(vector<vector<string>>& spaceanal, vector<vector<string>>& polyanal);
     void ResumePolymer(vector<vector<string>>& spaceanal, vector<vector<string>>& polyanal);
@@ -72,12 +73,12 @@ public:
     
     void Initialize()
     {
-        if (max(LSim, LSumo) <= Ly && max(NSim, NSumo) < Lx)
+        if (max(LSim, LSumo) <= Ly && max(NSim, 2*NSumo) < Lx)
         {
             cout << "Used dilute initialization, horizontal" <<endl;
             DiluteInit('h');
         }
-        else if (max(LSim, LSumo) <= Lx && max(NSim, NSumo) < Ly)
+        else if (max(LSim, LSumo) <= Lx && max(NSim, 2*NSumo) < Ly)
         {
             cout << "Used dilute initialization, horizontal" <<endl;
             DiluteInit('v');
@@ -98,8 +99,8 @@ public:
             DenseInit(rows_sim, 'i');
             
             
-            int rows_min_sumo = ceil((double)NSumo/Lx);
-            int rows_max_sumo = (int) Ly / LSumo;
+            int rows_min_sumo = ceil((double)NSumo/(Lx/2));
+            int rows_max_sumo = (int) Ly / (LSumo/2);
             int rows_sumo = -1;
             if (rows_max_sumo < rows_min_sumo)
                 throw invalid_argument("Dense Initialization failed for Sumo, maybe too dense");
@@ -108,6 +109,50 @@ public:
             cout << "Used dense initialization with " << rows_sumo << " rows for Sumo" << endl;
             DenseInit(rows_sumo, 'u');
         }
+    }
+    void CheckPhosphorylate()
+    {
+        for (auto poly : Sims)
+        {
+            cout<<"polymer"<<poly.poly_id<<endl;
+            for (int i = 0; i < poly.locs.size(); i++)
+            {
+                if (Phosphorylated(poly.locs[i]))
+                {
+                    cout<<"One phos site"<<i<<endl;
+                }
+            }
+        }
+    }
+    void Phosphorylate(int polyid, bool polytype, int siteid)
+    {
+        auto pt = polytype? Sims[polyid].locs[siteid] : Sumos[polyid].locs[siteid];
+        UnsafeRemoveBond(pt);
+        int val = GetSpacePoint(pt);
+        assert(abs(val) == 1);
+        SetSpacePoint(pt, val * 3);
+#ifndef NDEBUG
+        cout<<"Phosphorylate polymer "<<polyid<<" of type "<<polytype<<" at site "<<siteid<<endl;
+        CheckPhosphorylate();
+#endif
+    }
+    void Dephosphorylate(int polyid, bool polytype, int siteid)
+    {
+        auto pt = polytype? Sims[polyid].locs[siteid] : Sumos[polyid].locs[siteid];
+        int val = GetSpacePoint(pt);
+        assert(abs(val) == 3);
+        SetSpacePoint(pt, val/3);
+#ifndef NDEBUG
+        cout<<"Dephosphorylate polymer "<<polyid<<" of type "<<polytype<<" at site "<<siteid<<endl;
+#endif
+
+    }
+    bool Phosphorylated(Pos2d2l point)
+    {
+        int x = point.x;
+        int y = point.y;
+        int layer = point.siml? 0:1;
+        return abs(space[layer][x][y]) == 3;
     }
     
     vector<Pos2d2l> Neighbor(Pos2d2l point)
@@ -123,6 +168,19 @@ public:
         return {Pos2d2l(point.x, point.y, !point.siml)};
     }
     
+    void UnsafeRemoveBond(Pos2d2l point)
+    {
+        int x = point.x;
+        int y = point.y;
+        int layer = point.siml? 0:1;
+        if(abs(space[layer][x][y]) == 2)
+        {
+            assert(space[1-layer][x][y] * space[layer][x][y] == -4);
+            space[layer][x][y] /= 2;
+            space[1-layer][x][y] /= 2;
+        }
+    }
+    
     void SafeRemove(Pos2d2l point)
     {
         int x = point.x;
@@ -130,7 +188,7 @@ public:
         int layer = point.siml? 0:1;
         assert(space[layer][x][y] != 0);
         
-        if (abs(space[layer][x][y])!= 1) // we have a bond to remove, so remove it
+        if (abs(space[layer][x][y])== 2) // we have a bond to remove, so remove it
         {
             assert(abs(space[1-layer][x][y])==2); // assert bond consistency
             space[1-layer][x][y] = [](int &x) {return (x>0) - (x<0);}(space[1-layer][x][y]);
@@ -157,10 +215,14 @@ public:
         int layer2 = point2.siml? 0:1;
         
         assert(layer1+layer2 == 1 && x1==x2 && y1==y2);
-        assert(abs(space[layer1][x1][y1]) == 1 && abs(space[layer2][x2][y2]));
+        assert(abs(space[layer1][x1][y1]) == 1 && abs(space[layer2][x2][y2]) == 1);
         
         space[layer1][x1][y1] *= 2;
         space[layer2][x2][y2] *= 2;
+    }
+    void CreateBond(Pos2d2l point)
+    {
+        CreateBond(point, BondNeighbor(point)[0]);
     }
     
     bool CanBuildBond(Pos2d2l point1, Pos2d2l point2)
@@ -175,14 +237,14 @@ public:
     
     bool InABond(Pos2d2l point)
     {
-        return abs(space[point.siml? 0:1][point.x][point.y]) != 1 && abs(space[point.siml? 0:1][point.x][point.y]) != 0;
+        return abs(space[point.siml? 0:1][point.x][point.y]) == 2;
     }
     
     bool CanBuildBondTentative(Pos2d2l bpoint, int sitevalue)
     {
         return space[bpoint.siml? 0:1][bpoint.x][bpoint.y] * sitevalue == -1;
     }
-    
+        
     void DiluteInit(char direction);
     void DenseInit(int rows, char typ);
     void Place(char typ, int id, vector<Pos2d2l> locs) // i for sim, u for sumo
@@ -199,6 +261,8 @@ public:
             int x = locs[idx].x;
             int y = locs[idx].y;
             int layer = locs[idx].siml? 0:1;
+            if(space[layer][x][y] != 0)
+                throw(std::invalid_argument("Initialization: trying to assign one point with two monomers."));
             space[layer][x][y] = spacetype;
             rspace[layer][x][y][0] = id;
             rspace[layer][x][y][1] = idx;
@@ -238,7 +302,7 @@ public:
     
     void SetSpacePoint(Pos2d2l& point, int val)
     {
-        space[point.siml?0:1][point.x][point.y];
+        space[point.siml?0:1][point.x][point.y] = val;
     }
 
     void MoveTogether(Pos2d2l& oldpoint, Pos2d2l& newpoint)
@@ -258,6 +322,20 @@ public:
         int polyid  = rspace[cooldpoint.siml? 0:1][cooldpoint.x][cooldpoint.y][0];
         int polypos = rspace[cooldpoint.siml? 0:1][cooldpoint.x][cooldpoint.y][0];
         return make_tuple(polyid, polypos);
+    }
+    
+    void ReduceEpycLength()
+    {
+        LSim -= 1;
+        for (auto& poly : Sims)
+        {
+            auto pt = poly.locs.back();
+            SafeRemove(pt);
+            int layer = pt.siml? 0:1;
+            rspace[layer][pt.x][pt.y][0] = NOBOND;
+            rspace[layer][pt.x][pt.y][1] = NOBOND;
+            poly.locs.pop_back();
+        }
     }
 };
 
