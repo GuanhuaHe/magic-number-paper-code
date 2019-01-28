@@ -38,7 +38,6 @@ class App
     Move<S, P, SnakeMove<S, P>> sm;
     Move<S, P, CornerMove<S, P>> cm;
     Move<S, P, EndMove<S, P>> em;
-    Move<S, P, FlipMove<S, P>> fm;
     RubiMove<S, P, TranslationMove<S, P>> tm;
     RubiMove<S, P, RotationMove<S, P>> rm;
     RubiMove<S, P, TranslationMove<S, P>> Tm;
@@ -53,7 +52,7 @@ public:
     App(int nsim1, int nsim2, int nsumo, int lsim1, int lsim2, int lsumo, size_t lx, size_t ly):
         test_tube(nsim1, nsim2, nsumo, lsim1, lsim2, lsumo, lx, ly),
         sm(test_tube), cm(test_tube), em(test_tube),
-        fm(test_tube), tm(test_tube), rm(test_tube), Tm(test_tube), Rm(test_tube),
+        tm(test_tube), rm(test_tube), Tm(test_tube), Rm(test_tube),
         Xm(test_tube), Ym(test_tube),
         gen(rd()), original_nbr_bond(0) {}
     
@@ -107,11 +106,6 @@ public:
                 cm.ClearSucc();
                 break;
                 
-            case 'f':
-                returnvalue = fm.GetSucc();
-                fm.ClearSucc();
-                break;
-                
             case 't':
                 returnvalue = tm.GetSucc();
                 tm.ClearSucc();
@@ -147,7 +141,7 @@ public:
         return returnvalue;
     }
     
-    double GetEnergy(){return -(original_nbr_bond + sm.bond_change + em.bond_change + cm.bond_change + fm.bond_change + tm.bond_change + rm.bond_change);}
+    double GetEnergy(){return -(original_nbr_bond + sm.bond_change + em.bond_change + cm.bond_change + tm.bond_change + rm.bond_change);}
     void ShowSpace(std::ostream &out) {PrintSpace(out, test_tube); }
     void ShowBond(std::ostream &out) {PrintBond(out, test_tube); }
     void ShowPolymer(std::ostream &out) {PrintPolymer(out, test_tube); }
@@ -157,7 +151,6 @@ public:
         sm.SetBeta(beta);
         cm.SetBeta(beta);
         em.SetBeta(beta);
-        fm.SetBeta(beta);
         tm.SetBeta(beta);
         rm.SetBeta(beta);
         Tm.SetBeta(beta);
@@ -172,7 +165,6 @@ public:
         sm.SetGammaIntra(gammaintra);
         cm.SetGammaIntra(gammaintra);
         em.SetGammaIntra(gammaintra);
-        fm.SetGammaIntra(gammaintra);
         tm.SetGammaIntra(gammaintra);
         rm.SetGammaIntra(gammaintra);
         Tm.SetGammaIntra(gammaintra);
@@ -186,7 +178,6 @@ public:
         sm.SetGammaInter(gammainter);
         cm.SetGammaInter(gammainter);
         em.SetGammaInter(gammainter);
-        fm.SetGammaInter(gammainter);
         tm.SetGammaInter(gammainter);
         rm.SetGammaInter(gammainter);
         Tm.SetGammaInter(gammainter);
@@ -403,10 +394,6 @@ void App<S,P>::Proceed(char typ)
             
         case 'c':
             cm.ExecMove(id_r, 'i');
-            break;
-            
-        case 'f':
-            fm.ExecRewiringMove(id_r, 'i');
             break;
             
         case 't':

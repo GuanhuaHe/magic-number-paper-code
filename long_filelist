@@ -1,0 +1,1 @@
+for ff in Poly*step*.txt; do ls $ff >> filelist.txt; done;

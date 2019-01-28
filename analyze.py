@@ -185,6 +185,7 @@ def analyze(lines, prop):
 fff = open("filelist.txt", 'r')
 for filename in fff.readlines():
     try: 
+        #print filename
         f = open(filename[:-1], 'r')
         lines = f.readlines()
         propraw = filename
@@ -195,9 +196,10 @@ for filename in fff.readlines():
         lepyc2 = propraw.split("_lsim2_")[1].split('_')[0]
         lrubi = propraw.split("_lsumo_")[1].split('_')[0]
         beta = propraw.split("beta_")[1].split('_')[0]
-        gamma = propraw.split("gammaintra_")[1].split(".txt")[0]
+        gammaintra = propraw.split("gammaintra_")[1].split("_")[0]
+        gammainter = propraw.split("gammainter")[1].split(".txt")[0]
         step = propraw.split("step_")[1].split("_")[0]
-        prop = "NEPYC1_"+nepyc1+"_NEPYC2_"+nepyc2+"_NRUBI_"+nrubi+"_LEPYC1_"+lepyc1+"_LEPYC2_"+lepyc2+"_LRUBY_"+lrubi+"_beta_"+beta+"_gamma_"+gamma+"_step_"+step
+        prop = "NEPYC1_midline_"+nepyc1+"_NEPYC2_"+nepyc2+"_NRUBI_"+nrubi+"_LEPYC1_"+lepyc1+"_LEPYC2_"+lepyc2+"_LRUBY_"+lrubi+"_beta_"+beta+"_gammaintra_"+gammaintra+"_gammainter_"+gammainter+"_step_"+step
         analyze(lines, prop)
     except e:
         print filename+"failed"
